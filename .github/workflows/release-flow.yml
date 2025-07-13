@@ -43,28 +43,33 @@ jobs:
       - name: Создаем changelog
         id: changelog
         run: |
-          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
-          git log $LAST_TAG..HEAD --format="- %s" > changes.txt
-          echo "## v${{ env.VERSION }}\n$(cat changes.txt)\n\n$(cat CHANGELOG.md)" > CHANGELOG.md
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+          git log $LAST_TAG..HEAD --pretty=format:"- %s (%h)" > changes.txt
+          if [ ! -f CHANGELOG.md ]; then
+            echo "# Changelog" > CHANGELOG.md
+          fi
+          echo -e "## v${{ env.VERSION }} ($(date '+%Y-%m-%d'))\n$(cat changes.txt)\n\n$(cat CHANGELOG.md)" > CHANGELOG.md
+          echo "CHANGES=$(cat changes.txt)" >> $GITHUB_ENV
 
       - name: Записываем данные в changelog
         run: |
-          git config user.name "github-actions"
-          git config user.email "github-actions@github.com"
-          git commit -am "Update CHANGELOG for v${{ env.VERSION }}"
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git add CHANGELOG.md
+          git commit -m "Update CHANGELOG for v${{ env.VERSION }}"
           git push origin releases/${{ env.VERSION }}
 
       - name: Создаем issue
         uses: peter-evans/create-issue-from-file@v4
         with:
           title: "Release v${{ env.VERSION }}"
-          content-filepath: changes.txt
           labels: release
           body: |
-            **Release Info**  
-            - Version: ${{ env.VERSION }}  
+            **Release Information**  
+            - Version: v${{ env.VERSION }}  
             - Author: ${{ github.actor }}  
             - Date: $(date -u +'%Y-%m-%d %H:%M:%S')  
-            - Docker Image: `${{ env.REGISTRY }}/app:${{ env.VERSION }}`  
-            - Changes:  
-              $(cat changes.txt)
+            - Docker Image: `cr.yandex/${{ env.REGISTRY }}/app:v${{ env.VERSION }}`  
+
+            **Changes**  
+            ${{ env.CHANGES }}
