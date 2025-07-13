@@ -6,7 +6,9 @@
     "build": "webpack --mode=production --node-env=production",
     "watch": "webpack --watch",
     "test": "jest",
-    "lint": "eslint ./src"
+    "lint": "eslint ./src",
+    "build:docker": "docker build -t shri-infra .",
+    "start:docker": "docker run -p 3000:3000 --name shri-infra-container shri-infra"
   },
   "dependencies": {
     "@bem-react/classname": "^1.6.0",
@@ -16,6 +18,7 @@
     "axios": "^1.7.2",
     "bootstrap": "^5.3.3",
     "chai": "^5.1.1",
+    "docker": "^1.0.0",
     "express": "^4.19.2",
     "immer": "^10.1.1",
     "nodemon": "^3.1.2",
