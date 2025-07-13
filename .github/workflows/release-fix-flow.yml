@@ -1,0 +1,65 @@
+name: Release-Fix
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version to fix (e.g. 123)'
+        required: true
+
+env:
+  REGISTRY: cr.yandex/crpuv7mc1hbevup1qva6
+  FIX_NUM: ${{ github.run_number }}
+
+jobs:
+  hotfix:
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: releases/${{ inputs.version }}
+
+      - name: Устанавливаем node
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run test
+
+      - name: Подключаемся к Container Registry
+        run: echo "${{ secrets.YAN_TOKEN }}" | docker login --username iam --password-stdin cr.yandex
+
+      - name: Создаем и отправляем исправленный докер образ
+        run: |
+          docker build -t ${{ env.REGISTRY }}/app:${{ inputs.version }}_fix${{ env.FIX_NUM }} .
+          docker tag ${{ env.REGISTRY }}/app:${{ inputs.version }}_fix${{ env.FIX_NUM }} ${{ env.REGISTRY }}/app:${{ inputs.version }}_latest
+          docker push ${{ env.REGISTRY }}/app:${{ inputs.version }}_fix${{ env.FIX_NUM }}
+          docker push ${{ env.REGISTRY }}/app:${{ inputs.version }}_latest
+
+      - name: Создаем тег исправления
+        run: |
+          git tag v${{ inputs.version }}_fix${{ env.FIX_NUM }}
+          git push origin v${{ inputs.version }}_fix${{ env.FIX_NUM }}
+
+      - name: Находим релизное issue 
+        id: find-issue
+        uses: peter-evans/find-issue@v2
+        with:
+          state: open
+          labels: release
+          title-contains: "Release v${{ inputs.version }}"
+
+      - name: Добавляем комментарий фикса
+        if: steps.find-issue.outputs.issue-number != ''
+        uses: peter-evans/create-or-update-comment@v2
+        with:
+          issue-number: ${{ steps.find-issue.outputs.issue-number }}
+          body: |
+            **Hotfix Applied**  
+            - Fix Version: ${{ env.FIX_NUM }}  
+            - Author: ${{ github.actor }}  
+            - Date: $(date -u +'%Y-%m-%d %H:%M:%S')  
+            - Docker Image: `${{ env.REGISTRY }}/app:${{ inputs.version }}_fix${{ env.FIX_NUM }}`  
+            - Changes:  
+              $(git log --format="- %s" -n 5)

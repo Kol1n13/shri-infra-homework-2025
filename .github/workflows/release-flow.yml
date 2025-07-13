@@ -1,0 +1,70 @@
+name: Release
+on: workflow_dispatch
+
+env:
+  REGISTRY: cr.yandex/crpuv7mc1hbevup1qva6
+  VERSION: ${{ github.run_number }}
+
+jobs:
+  release:
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Устанавливаем node
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run test
+
+      - name: Отводим ветку для релиза
+        run: |
+          git checkout -b releases/${{ env.VERSION }}
+          git push origin releases/${{ env.VERSION }}
+
+      - name: Подключаемся к Container Registry
+        run: echo "${{ secrets.YAN_TOKEN }}" | docker login --username iam --password-stdin cr.yandex
+
+      - name: Создаем и отправляем докер образ
+        run: |
+          docker build -t ${{ env.REGISTRY }}/app:${{ env.VERSION }} .
+          docker tag ${{ env.REGISTRY }}/app:${{ env.VERSION }} ${{ env.REGISTRY }}/app:latest
+          docker push ${{ env.REGISTRY }}/app:${{ env.VERSION }}
+          docker push ${{ env.REGISTRY }}/app:latest
+
+      - name: Создаем тег
+        run: |
+          git tag v${{ env.VERSION }}
+          git push origin v${{ env.VERSION }}
+
+      - name: Создаем changelog
+        id: changelog
+        run: |
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          git log $LAST_TAG..HEAD --format="- %s" > changes.txt
+          echo "## v${{ env.VERSION }}\n$(cat changes.txt)\n\n$(cat CHANGELOG.md)" > CHANGELOG.md
+
+      - name: Записываем данные в changelog
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git commit -am "Update CHANGELOG for v${{ env.VERSION }}"
+          git push origin releases/${{ env.VERSION }}
+
+      - name: Создаем issue
+        uses: peter-evans/create-issue-from-file@v4
+        with:
+          title: "Release v${{ env.VERSION }}"
+          content-filepath: changes.txt
+          labels: release
+          body: |
+            **Release Info**  
+            - Version: ${{ env.VERSION }}  
+            - Author: ${{ github.actor }}  
+            - Date: $(date -u +'%Y-%m-%d %H:%M:%S')  
+            - Docker Image: `${{ env.REGISTRY }}/app:${{ env.VERSION }}`  
+            - Changes:  
+              $(cat changes.txt)
